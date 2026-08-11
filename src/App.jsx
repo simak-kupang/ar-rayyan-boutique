@@ -37,6 +37,9 @@ const STATUS_TONE = {
   Selesai: "#6B4038",
 };
 
+const DEFAULT_PIN = "aintahir";
+const OWNER_WA = "6282146661621";
+
 function formatIDR(n) {
   return "Rp " + n.toLocaleString("id-ID");
 }
@@ -92,6 +95,55 @@ export default function App() {
   const [cart, setCart] = useState([]);
   const [adminPin, setAdminPin] = useState("");
   const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [pinError, setPinError] = useState(false);
+  const [currentPin, setCurrentPin] = useState(() => {
+    try {
+      return localStorage.getItem("arrayan_admin_pin") || DEFAULT_PIN;
+    } catch {
+      return DEFAULT_PIN;
+    }
+  });
+  const [showChangePin, setShowChangePin] = useState(false);
+  const [pinOld, setPinOld] = useState("");
+  const [pinNew, setPinNew] = useState("");
+  const [pinNew2, setPinNew2] = useState("");
+  const [changePinMsg, setChangePinMsg] = useState("");
+
+  const tryUnlock = () => {
+    if (adminPin === currentPin) {
+      setAdminUnlocked(true);
+      setPinError(false);
+    } else {
+      setPinError(true);
+    }
+  };
+
+  const handleChangePin = () => {
+    if (pinOld !== currentPin) {
+      setChangePinMsg("PIN lama salah.");
+      return;
+    }
+    if (pinNew.length < 4) {
+      setChangePinMsg("PIN baru minimal 4 karakter.");
+      return;
+    }
+    if (pinNew !== pinNew2) {
+      setChangePinMsg("Konfirmasi PIN baru tidak cocok.");
+      return;
+    }
+    setCurrentPin(pinNew);
+    try {
+      localStorage.setItem("arrayan_admin_pin", pinNew);
+    } catch {}
+    setChangePinMsg("PIN berhasil diganti.");
+    setPinOld("");
+    setPinNew("");
+    setPinNew2("");
+    setTimeout(() => {
+      setShowChangePin(false);
+      setChangePinMsg("");
+    }, 1200);
+  };
 
   const addToCart = (p) => setCart((c) => [...c, p]);
   const removeFromCart = (idx) => setCart((c) => c.filter((_, i) => i !== idx));
@@ -372,25 +424,88 @@ export default function App() {
                 <p className="text-xs text-[#A4888E] mb-5">Masukkan PIN untuk kelola toko</p>
                 <input
                   type="password"
-                  maxLength={6}
                   value={adminPin}
-                  onChange={(e) => setAdminPin(e.target.value)}
-                  className="w-32 text-center tracking-[6px] text-lg border-b-2 border-[#CBA74F] bg-transparent outline-none py-1"
-                  placeholder="••••"
+                  onChange={(e) => {
+                    setAdminPin(e.target.value);
+                    setPinError(false);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && tryUnlock()}
+                  className="w-40 text-center tracking-widest text-lg border-b-2 border-[#CBA74F] bg-transparent outline-none py-1"
+                  placeholder="PIN"
                 />
+                {pinError && (
+                  <p className="text-[11px] text-red-500 mt-2">PIN salah, coba lagi.</p>
+                )}
                 <button
-                  onClick={() => setAdminUnlocked(true)}
+                  onClick={tryUnlock}
                   className="mt-6 text-xs px-6 py-2.5 rounded-full text-white"
                   style={{ background: "#A2685D" }}
                 >
                   Masuk
                 </button>
+                <a
+                  href={`https://wa.me/${OWNER_WA}?text=${encodeURIComponent("Halo, saya lupa PIN Admin Ar Rayyan Butik, mohon dikonfirmasi ulang.")}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 text-[11px] underline"
+                  style={{ color: "#8F5A50" }}
+                >
+                  Lupa PIN? Konfirmasi via WhatsApp
+                </a>
               </>
             ) : (
               <div className="w-full text-left">
-                <h2 className="text-lg mb-4 text-center" style={{ fontFamily: "'Cormorant Garamond', serif", color: "#A2685D", fontStyle: "italic" }}>
-                  Kelola Data
-                </h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif", color: "#A2685D", fontStyle: "italic" }}>
+                    Kelola Data
+                  </h2>
+                  <button
+                    onClick={() => setShowChangePin((v) => !v)}
+                    className="text-[11px] underline"
+                    style={{ color: "#8F5A50" }}
+                  >
+                    Ganti PIN
+                  </button>
+                </div>
+
+                {showChangePin && (
+                  <div className="bg-white rounded-xl border border-[#EFE0DD] p-3 mb-4 space-y-2">
+                    <input
+                      type="password"
+                      placeholder="PIN lama"
+                      value={pinOld}
+                      onChange={(e) => setPinOld(e.target.value)}
+                      className="w-full text-xs border border-[#EFE0DD] rounded-lg px-3 py-2 outline-none"
+                    />
+                    <input
+                      type="password"
+                      placeholder="PIN baru"
+                      value={pinNew}
+                      onChange={(e) => setPinNew(e.target.value)}
+                      className="w-full text-xs border border-[#EFE0DD] rounded-lg px-3 py-2 outline-none"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Ulangi PIN baru"
+                      value={pinNew2}
+                      onChange={(e) => setPinNew2(e.target.value)}
+                      className="w-full text-xs border border-[#EFE0DD] rounded-lg px-3 py-2 outline-none"
+                    />
+                    {changePinMsg && (
+                      <p className="text-[11px]" style={{ color: changePinMsg.includes("berhasil") ? "#2E7D32" : "#C0392B" }}>
+                        {changePinMsg}
+                      </p>
+                    )}
+                    <button
+                      onClick={handleChangePin}
+                      className="w-full text-xs py-2 rounded-full text-white"
+                      style={{ background: "#A2685D" }}
+                    >
+                      Simpan PIN Baru
+                    </button>
+                  </div>
+                )}
+
                 {[
                   { label: "Kelola Produk", desc: "Tambah, edit, hapus produk per kategori" },
                   { label: "Kelola Pesanan", desc: "Lihat & ubah status pesanan masuk" },
