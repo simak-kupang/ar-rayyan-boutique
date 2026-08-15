@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Phone, Globe, MapPin, ShoppingBag, Search, Home as HomeIcon, LayoutGrid, ShoppingCart, Lock, DoorOpen, ClipboardList, ChevronLeft, Bell, User, ChevronDown, Trash2, Pencil, Plus } from "lucide-react";
+import { Phone, Globe, MapPin, ShoppingBag, Search, Home as HomeIcon, LayoutGrid, ShoppingCart, Lock, DoorOpen, ClipboardList, ChevronLeft, Bell, User, ChevronDown, Trash2, Pencil, Plus, Minus, X } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDocs, query, where, orderBy, serverTimestamp } from "firebase/firestore";
 
@@ -99,29 +99,36 @@ function ProductThumb({ tone, imageUrl }) {
   );
 }
 
-function ProductCard({ p, onAdd }) {
+function ProductCard({ p, onOpen }) {
   return (
-    <div className="rounded-2xl overflow-hidden bg-white shadow-sm border border-[#EFE0DD]">
+    <button
+      onClick={() => onOpen(p)}
+      className="text-left rounded-2xl overflow-hidden bg-white shadow-sm border border-[#EFE0DD] w-full"
+    >
       <ProductThumb tone={p.tone} imageUrl={p.imageUrl} />
       <div className="p-3">
         <p className="text-sm text-[#4A3B37] font-medium leading-snug" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
           {p.name}
         </p>
         <p className="text-[#A2685D] font-semibold text-sm mt-1">{formatIDR(p.price)}</p>
-        <button
-          onClick={() => onAdd(p)}
-          className="mt-2 w-full text-xs py-1.5 rounded-full border border-[#CBA74F] text-[#7A4A42] hover:bg-[#F5E6E4] transition"
-        >
-          + Keranjang
-        </button>
+        <span className="mt-2 block w-full text-center text-xs py-1.5 rounded-full border border-[#CBA74F] text-[#7A4A42]">
+          Lihat Detail
+        </span>
       </div>
-    </div>
+    </button>
   );
 }
 
 export default function App() {
   const [tab, setTab] = useState("home");
+  const [prevTab, setPrevTab] = useState("home");
   const [activeCat, setActiveCat] = useState(null);
+  const [viewProduct, setViewProduct] = useState(null);
+  const [showZoom, setShowZoom] = useState(false);
+  const [selectedSize, setSelectedSize] = useState("");
+  const [selectedColor, setSelectedColor] = useState("");
+  const [selectedQty, setSelectedQty] = useState(1);
+  const [detailError, setDetailError] = useState("");
   const [products, setProducts] = useState([]);
   const [seeding, setSeeding] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -129,6 +136,10 @@ export default function App() {
   const [formName, setFormName] = useState("");
   const [formCat, setFormCat] = useState("gamis");
   const [formPrice, setFormPrice] = useState("");
+  const [formSizes, setFormSizes] = useState("");
+  const [formColors, setFormColors] = useState("");
+  const [formStock, setFormStock] = useState("");
+  const [formDescription, setFormDescription] = useState("");
   const [formImageFile, setFormImageFile] = useState(null);
   const [formImagePreview, setFormImagePreview] = useState("");
   const [formSaving, setFormSaving] = useState(false);
@@ -177,8 +188,8 @@ export default function App() {
     setCheckoutSaving(true);
     setCheckoutError("");
     try {
-      const items = cart.map((p) => ({ name: p.name, price: p.price }));
-      const orderTotal = cart.reduce((s, p) => s + p.price, 0);
+      const items = cart.map((p) => ({ name: p.name, price: p.price, size: p.size || "", color: p.color || "", qty: p.qty || 1 }));
+      const orderTotal = cart.reduce((s, p) => s + p.price * (p.qty || 1), 0);
       const docRef = await addDoc(collection(db, "orders"), {
         buyerName: buyerName.trim(),
         buyerPhone: buyerPhone.trim(),
@@ -243,6 +254,10 @@ export default function App() {
     setFormName("");
     setFormCat("gamis");
     setFormPrice("");
+    setFormSizes("");
+    setFormColors("");
+    setFormStock("");
+    setFormDescription("");
     setFormImageFile(null);
     setFormImagePreview("");
     setFormError("");
@@ -253,6 +268,10 @@ export default function App() {
     setFormName(p.name);
     setFormCat(p.cat);
     setFormPrice(String(p.price));
+    setFormSizes((p.sizes || []).join(", "));
+    setFormColors((p.colors || []).join(", "));
+    setFormStock(p.stock !== undefined ? String(p.stock) : "");
+    setFormDescription(p.description || "");
     setFormImageFile(null);
     setFormImagePreview(p.imageUrl || "");
     setFormError("");
@@ -283,7 +302,13 @@ export default function App() {
         cat: formCat,
         price: Number(formPrice),
         imageUrl,
+        sizes: formSizes.split(",").map((s) => s.trim()).filter(Boolean),
+        colors: formColors.split(",").map((s) => s.trim()).filter(Boolean),
+        description: formDescription.trim(),
       };
+      if (formStock !== "") {
+        payload.stock = Number(formStock);
+      }
       if (editingProduct) {
         await updateDoc(doc(db, "products", editingProduct.id), payload);
       } else {
@@ -354,9 +379,54 @@ export default function App() {
     }, 1200);
   };
 
-  const addToCart = (p) => setCart((c) => [...c, p]);
+  const openProductDetail = (p) => {
+    setPrevTab(tab);
+    setViewProduct(p);
+    setSelectedSize(p.sizes && p.sizes.length > 0 ? p.sizes[0] : "");
+    setSelectedColor(p.colors && p.colors.length > 0 ? p.colors[0] : "");
+    setSelectedQty(1);
+    setDetailError("");
+    setTab("detail");
+  };
+
+  const closeDetail = () => {
+    setTab(prevTab);
+    setViewProduct(null);
+  };
+
+  const addToCartFromDetail = () => {
+    if (!viewProduct) return;
+    if (viewProduct.stock !== undefined && viewProduct.stock <= 0) {
+      setDetailError("Stok produk ini sedang habis.");
+      return;
+    }
+    if (viewProduct.sizes && viewProduct.sizes.length > 0 && !selectedSize) {
+      setDetailError("Pilih ukuran terlebih dahulu.");
+      return;
+    }
+    if (viewProduct.colors && viewProduct.colors.length > 0 && !selectedColor) {
+      setDetailError("Pilih warna terlebih dahulu.");
+      return;
+    }
+    setCart((c) => [
+      ...c,
+      {
+        id: viewProduct.id,
+        name: viewProduct.name,
+        price: viewProduct.price,
+        imageUrl: viewProduct.imageUrl,
+        tone: viewProduct.tone,
+        size: selectedSize,
+        color: selectedColor,
+        qty: selectedQty,
+      },
+    ]);
+    setTab("keranjang");
+    setViewProduct(null);
+  };
+
   const removeFromCart = (idx) => setCart((c) => c.filter((_, i) => i !== idx));
-  const total = cart.reduce((s, p) => s + p.price, 0);
+  const total = cart.reduce((s, p) => s + p.price * (p.qty || 1), 0);
 
   const filteredProducts = activeCat ? products.filter((p) => p.cat === activeCat) : products;
 
@@ -445,7 +515,7 @@ export default function App() {
               </p>
               <div className="grid grid-cols-2 gap-3">
                 {products.slice(4, 8).map((p) => (
-                  <ProductCard key={p.id} p={p} onAdd={addToCart} />
+                  <ProductCard key={p.id} p={p} onOpen={openProductDetail} />
                 ))}
               </div>
             </div>
@@ -460,7 +530,7 @@ export default function App() {
               </p>
               <div className="grid grid-cols-2 gap-3">
                 {products.slice(0, 4).map((p) => (
-                  <ProductCard key={p.id} p={p} onAdd={addToCart} />
+                  <ProductCard key={p.id} p={p} onOpen={openProductDetail} />
                 ))}
               </div>
             </div>
@@ -523,9 +593,146 @@ export default function App() {
 
             <div className="grid grid-cols-2 gap-3">
               {filteredProducts.map((p) => (
-                <ProductCard key={p.id} p={p} onAdd={addToCart} />
+                <ProductCard key={p.id} p={p} onOpen={openProductDetail} />
               ))}
             </div>
+          </div>
+        )}
+
+        {/* DETAIL PRODUK */}
+        {tab === "detail" && viewProduct && (
+          <div className="pb-4">
+            <div className="flex items-center gap-2 px-5 pt-4 pb-2">
+              <button onClick={closeDetail} className="p-1 -ml-1">
+                <ChevronLeft size={20} className="text-[#4A3B37]" />
+              </button>
+              <span className="text-sm text-[#4A3B37]">Detail Produk</span>
+            </div>
+
+            <button
+              onClick={() => viewProduct.imageUrl && setShowZoom(true)}
+              className="w-full h-64 bg-[#F5E6E4] flex items-center justify-center overflow-hidden"
+            >
+              {viewProduct.imageUrl ? (
+                <img src={viewProduct.imageUrl} alt={viewProduct.name} className="w-full h-full object-cover" />
+              ) : (
+                <div
+                  className="w-20 h-20 rounded-full flex items-center justify-center"
+                  style={{ background: viewProduct.tone }}
+                >
+                  <DoorOpen size={28} color="#FFF" />
+                </div>
+              )}
+            </button>
+            {viewProduct.imageUrl && (
+              <p className="text-center text-[10px] text-[#A4888E] mt-1">Ketuk foto untuk memperbesar</p>
+            )}
+
+            <div className="px-5 mt-4">
+              <p className="text-lg text-[#4A3B37]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                {viewProduct.name}
+              </p>
+              <p className="text-[#A2685D] font-semibold text-base mt-1">{formatIDR(viewProduct.price)}</p>
+
+              {viewProduct.stock !== undefined && (
+                <p className={`text-xs mt-1 ${viewProduct.stock > 0 ? "text-[#6B7280]" : "text-red-500"}`}>
+                  {viewProduct.stock > 0 ? `Stok tersedia: ${viewProduct.stock}` : "Stok habis"}
+                </p>
+              )}
+
+              {viewProduct.description && (
+                <p className="text-xs text-[#6B4038] mt-3 leading-relaxed">{viewProduct.description}</p>
+              )}
+
+              {viewProduct.sizes && viewProduct.sizes.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium text-[#4A3B37] mb-2">Ukuran</p>
+                  <div className="flex flex-wrap gap-2">
+                    {viewProduct.sizes.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setSelectedSize(s)}
+                        className="text-xs px-3 py-1.5 rounded-full border"
+                        style={
+                          selectedSize === s
+                            ? { background: "#A2685D", borderColor: "#A2685D", color: "#FFF" }
+                            : { borderColor: "#EFE0DD", color: "#4A3B37" }
+                        }
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {viewProduct.colors && viewProduct.colors.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium text-[#4A3B37] mb-2">Warna</p>
+                  <div className="flex flex-wrap gap-2">
+                    {viewProduct.colors.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => setSelectedColor(c)}
+                        className="text-xs px-3 py-1.5 rounded-full border"
+                        style={
+                          selectedColor === c
+                            ? { background: "#A2685D", borderColor: "#A2685D", color: "#FFF" }
+                            : { borderColor: "#EFE0DD", color: "#4A3B37" }
+                        }
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4">
+                <p className="text-xs font-medium text-[#4A3B37] mb-2">Jumlah</p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setSelectedQty((q) => Math.max(1, q - 1))}
+                    className="w-8 h-8 rounded-full border border-[#EFE0DD] flex items-center justify-center"
+                  >
+                    <Minus size={14} className="text-[#4A3B37]" />
+                  </button>
+                  <span className="text-sm text-[#4A3B37] w-6 text-center">{selectedQty}</span>
+                  <button
+                    onClick={() => setSelectedQty((q) => q + 1)}
+                    className="w-8 h-8 rounded-full border border-[#EFE0DD] flex items-center justify-center"
+                  >
+                    <Plus size={14} className="text-[#4A3B37]" />
+                  </button>
+                </div>
+              </div>
+
+              {detailError && <p className="text-[11px] text-red-500 mt-3">{detailError}</p>}
+
+              <button
+                onClick={addToCartFromDetail}
+                disabled={viewProduct.stock !== undefined && viewProduct.stock <= 0}
+                className="w-full mt-5 py-3 rounded-full text-white text-sm font-medium disabled:opacity-50"
+                style={{ background: "linear-gradient(90deg,#A2685D,#8F5A50)" }}
+              >
+                + Tambah ke Keranjang
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showZoom && viewProduct?.imageUrl && (
+          <div
+            onClick={() => setShowZoom(false)}
+            className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          >
+            <button
+              onClick={() => setShowZoom(false)}
+              className="absolute top-4 right-4 text-white p-2"
+            >
+              <X size={24} />
+            </button>
+            <img src={viewProduct.imageUrl} alt={viewProduct.name} className="max-w-full max-h-full object-contain" />
           </div>
         )}
 
@@ -553,14 +760,25 @@ export default function App() {
                   {cart.map((p, i) => (
                     <div key={i} className="flex items-center gap-3 bg-white rounded-xl border border-[#EFE0DD] p-2.5">
                       <div
-                        className="w-14 h-14 rounded-lg flex-shrink-0 flex items-center justify-center"
+                        className="w-14 h-14 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center"
                         style={{ background: "#F5E6E4" }}
                       >
-                        <DoorOpen size={16} color={p.tone} />
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <DoorOpen size={16} color={p.tone} />
+                        )}
                       </div>
                       <div className="flex-1">
                         <p className="text-xs font-medium text-[#4A3B37]">{p.name}</p>
-                        <p className="text-xs text-[#A2685D] font-semibold">{formatIDR(p.price)}</p>
+                        {(p.size || p.color) && (
+                          <p className="text-[10px] text-[#A4888E]">
+                            {[p.size, p.color].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
+                        <p className="text-xs text-[#A2685D] font-semibold">
+                          {formatIDR(p.price)} <span className="text-[#A4888E] font-normal">x{p.qty || 1}</span>
+                        </p>
                       </div>
                       <button onClick={() => removeFromCart(i)} className="text-[10px] text-[#8F5A50] underline">
                         Hapus
@@ -860,6 +1078,34 @@ export default function App() {
                           value={formPrice}
                           onChange={(e) => setFormPrice(e.target.value)}
                           className="w-full text-xs border border-[#EFE0DD] rounded-lg px-3 py-2 outline-none"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Ukuran, pisah koma (contoh: S, M, L, XL)"
+                          value={formSizes}
+                          onChange={(e) => setFormSizes(e.target.value)}
+                          className="w-full text-xs border border-[#EFE0DD] rounded-lg px-3 py-2 outline-none"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Warna, pisah koma (contoh: Hitam, Maroon)"
+                          value={formColors}
+                          onChange={(e) => setFormColors(e.target.value)}
+                          className="w-full text-xs border border-[#EFE0DD] rounded-lg px-3 py-2 outline-none"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Stok (kosongkan jika tidak dipantau)"
+                          value={formStock}
+                          onChange={(e) => setFormStock(e.target.value)}
+                          className="w-full text-xs border border-[#EFE0DD] rounded-lg px-3 py-2 outline-none"
+                        />
+                        <textarea
+                          placeholder="Deskripsi produk (opsional)"
+                          value={formDescription}
+                          onChange={(e) => setFormDescription(e.target.value)}
+                          rows={2}
+                          className="w-full text-xs border border-[#EFE0DD] rounded-lg px-3 py-2 outline-none resize-none"
                         />
                         {formError && <p className="text-[11px] text-red-500">{formError}</p>}
                         <div className="flex gap-2">
