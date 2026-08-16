@@ -1054,7 +1054,7 @@ export default function App() {
                               <span className="text-[11px] text-[#A4888E]">Ketuk untuk pilih foto</span>
                             )}
                           </div>
-                          <input type="file" accept="image/*" capture="environment" onChange={handleImagePick} className="hidden" />
+                          <input type="file" accept="image/*" onChange={handleImagePick} className="hidden" />
                         </label>
                         <input
                           type="text"
